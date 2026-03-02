@@ -1,0 +1,1102 @@
+<!doctype html>
+
+<html lang="es"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" /><title>Pedardo → Letra → Descanso → Globos</title><style>
+  
+  html,body{margin:0;height:100%;background:#07070c;overflow:hidden;touch-action:none;}
+  
+  canvas{display:block;width:100vw;height:100vh;}
+  
+</style></head><body><canvas id="c"></canvas>
+
+<script>
+  
+(() => {
+  
+  const canvas = document.getElementById("c");
+  
+  const ctx = canvas.getContext("2d", { alpha:false });
+  
+  const DPR = Math.min(2, window.devicePixelRatio || 1);
+  
+
+  
+  let W=0,H=0;
+  
+  function resize(){
+  
+    W = Math.floor(innerWidth * DPR);
+  
+    H = Math.floor(innerHeight * DPR);
+  
+    canvas.width = W; canvas.height = H;
+  
+  }
+  
+  addEventListener("resize", () => { resize(); layout(); }, {passive:true});
+  
+  resize();
+  
+
+  
+  // ===== EDITA TEXTO LUEGO =====
+  
+  const LINES = ["FELIZ","CUMPLEAÑOS","ROMINA!"];
+  
+
+  
+  // ===== FASE FINAL: IMAGEN + DEDICATORIA =====
+  
+  const IMAGE_SRC = "foto.png"; // pon tu imagen en la misma carpeta (o usa URL)
+  
+  const DEDICATORIA = [
+  
+    "PARA UNA GRAN AMIGA🥳",
+  
+    "Gracias por tu condicional amistad y por todos", "los buenos momentos que compartimos.",
+  
+    "Te aprecio mucho. ¡Feliz cumpleaños! 🎉"
+  
+  ];
+  
+
+  
+  // ===== CONFIG (ajustes) =====
+  
+  const CFG = {
+  
+    rocketSpeedMin: 650,
+  
+    rocketSpeedMax: 950,
+  
+    rocketWiggle:  28,
+  
+    explodeSparks: 55,
+  
+
+  
+    letterStagger: 0.16,
+  
+    explodeHold:   0.18,
+  
+    readHold:      2.6,
+  
+
+  
+    balloonDelayMin: 0.10,
+  
+    balloonDelayMax: 0.60,
+  
+    releaseDelayMin: 0.40,
+  
+    releaseDelayMax: 1.15,
+  
+
+  
+    balloonSizeMul: 0.28,
+  
+    balloonAlpha:   0.22,
+  
+    stringAlpha:    0.58,
+  
+    highlightAlpha: 0.12,
+  
+
+  
+    floatVyMin: 16,
+  
+    floatVyMax: 38,
+  
+    floatVxMin: -18,
+  
+    floatVxMax:  18,
+  
+    floatDrift:  16,
+  
+
+  
+    glowBlur: 22,
+  
+    glowAlpha: 0.75
+  
+  };
+  
+
+  
+  const rand=(a,b)=>a+Math.random()*(b-a);
+  
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  
+  const easeOut=t=>1-Math.pow(1-t,3);
+  
+
+  
+  function drawBg(){
+  
+    ctx.fillStyle="#07070c";
+  
+    ctx.fillRect(0,0,W,H);
+  
+    const g = ctx.createRadialGradient(W*0.5, H*0.45, 10, W*0.5, H*0.45, Math.max(W,H)*0.78);
+  
+    g.addColorStop(0, "rgba(55,55,95,0.40)");
+  
+    g.addColorStop(1, "rgba(0,0,0,0.96)");
+  
+    ctx.fillStyle = g;
+  
+    ctx.fillRect(0,0,W,H);
+  
+  }
+  
+
+  
+  function roundRect(ctx, x, y, w, h, r){
+  
+    r = Math.min(r, w/2, h/2);
+  
+    ctx.moveTo(x+r, y);
+  
+    ctx.arcTo(x+w, y, x+w, y+h, r);
+  
+    ctx.arcTo(x+w, y+h, x, y+h, r);
+  
+    ctx.arcTo(x, y+h, x, y, r);
+  
+    ctx.arcTo(x, y, x+w, y, r);
+  
+    ctx.closePath();
+  
+  }
+  
+
+  
+  function hslaFromHsl(hsl, a){
+  
+    return hsl.replace("hsl(", "hsla(").replace(")", `,${a})`);
+  
+  }
+  
+
+  
+  let letters = [];
+  
+  let sparks = [];
+  
+  let formedTime = null;
+  
+
+  
+  // FASE FINAL
+  
+  const finalImg = new Image();
+  
+  finalImg.src = IMAGE_SRC;
+  
+  finalImg.decoding = "async";
+  
+  let showFinal = false;
+  
+  let finalStart = 0;
+  
+
+  
+  function neonColor(t){
+  
+    const hue = 300*t;
+  
+    return `hsl(${hue},95%,70%)`;
+  
+  }
+  
+
+  
+  function layout(){
+  
+    letters = [];
+  
+    sparks = [];
+  
+    formedTime = null;
+  
+
+  
+    // reset fase final
+  
+    showFinal = false;
+  
+    finalStart = 0;
+  
+
+  
+    const base = Math.min(W,H) * 0.085;
+  
+    const gap  = base * 1.20;
+  
+    const cx = W*0.5;
+  
+    const cy = H*0.52;
+  
+    const sizes = [base*1.05, base*0.80, base*0.95];
+  
+
+  
+    ctx.textAlign="left";
+  
+    ctx.textBaseline="middle";
+  
+
+  
+    let all = [];
+  
+    for(let li=0; li<LINES.length; li++){
+  
+      const line = LINES[li];
+  
+      const size = sizes[li] || base;
+  
+      ctx.font = `900 ${Math.floor(size)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+  
+
+  
+      const totalW = ctx.measureText(line).width;
+  
+      let x = cx - totalW/2;
+  
+      let y = cy + (li-1)*gap;
+  
+
+  
+      for(let i=0;i<line.length;i++){
+  
+        const ch = line[i];
+  
+        const wch = ctx.measureText(ch).width || (size*0.55);
+  
+        if(ch.trim()){
+  
+          all.push({ ch, x:x+wch/2, y, size });
+  
+        }
+  
+        x += wch;
+  
+      }
+  
+    }
+  
+
+  
+    for(let i=0;i<all.length;i++){
+  
+      const L = all[i];
+  
+      const tt = (all.length<=1) ? 0.5 : i/(all.length-1);
+  
+      const color = neonColor(tt);
+  
+
+  
+      const startDelay = i * CFG.letterStagger;
+  
+
+  
+      letters.push({
+  
+        ch: L.ch,
+  
+        tx: L.x, ty: L.y,
+  
+        size: L.size,
+  
+        color,
+  
+
+  
+        x: L.x + rand(-W*0.08, W*0.08),
+  
+        y: H + rand(60, 260)*DPR,
+  
+        vx: rand(-35, 35)*DPR,
+  
+        vy: -rand(CFG.rocketSpeedMin, CFG.rocketSpeedMax) * DPR,
+  
+        wig: rand(0.6, 1.5),
+  
+        born: startDelay,
+  
+
+  
+        state: "rocket",
+  
+        alpha: 0,
+  
+        explodedAt: null,
+  
+
+  
+        balloonAt: null,
+  
+        releaseAt: null,
+  
+
+  
+        fx: rand(CFG.floatVxMin, CFG.floatVxMax) * DPR,
+  
+        fy: -rand(CFG.floatVyMin, CFG.floatVyMax) * DPR,
+  
+        tSeed: rand(0, 10),
+  
+      });
+  
+    }
+  
+  }
+  
+
+  
+  function spawnExplosion(x,y,color){
+  
+    for(let i=0;i<CFG.explodeSparks;i++){
+  
+      const a = rand(0, Math.PI*2);
+  
+      const s = rand(140, 520) * DPR;
+  
+      sparks.push({
+  
+        x,y,
+  
+        vx: Math.cos(a)*s,
+  
+        vy: Math.sin(a)*s,
+  
+        life: 0,
+  
+        max: rand(0.55, 1.00),
+  
+        color,
+  
+        r: rand(1.2, 2.4)*DPR
+  
+      });
+  
+    }
+  
+  }
+  
+
+  
+  function updateSparks(dt){
+  
+    for(let i=sparks.length-1;i>=0;i--){
+  
+      const s = sparks[i];
+  
+      s.life += dt;
+  
+      s.x += s.vx*dt;
+  
+      s.y += s.vy*dt;
+  
+      s.vx *= 0.985;
+  
+      s.vy = s.vy*0.985 + 520*DPR*dt;
+  
+      if(s.life >= s.max) sparks.splice(i,1);
+  
+    }
+  
+  }
+  
+
+  
+  function drawSparks(){
+  
+    for(const s of sparks){
+  
+      const a = clamp(1 - s.life/s.max, 0, 1);
+  
+      ctx.save();
+  
+      ctx.globalAlpha = a;
+  
+      ctx.fillStyle = s.color;
+  
+      ctx.beginPath();
+  
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+  
+      ctx.fill();
+  
+      ctx.restore();
+  
+    }
+  
+  }
+  
+
+  
+  function drawNeonLetter(ch,x,y,size,color,alpha){
+  
+    ctx.save();
+  
+    ctx.textAlign="center";
+  
+    ctx.textBaseline="middle";
+  
+    ctx.font = `900 ${Math.floor(size)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+  
+
+  
+    ctx.shadowColor = color;
+  
+    ctx.shadowBlur  = CFG.glowBlur * DPR;
+  
+    ctx.fillStyle   = color;
+  
+
+  
+    ctx.globalAlpha = alpha * CFG.glowAlpha;
+  
+    ctx.fillText(ch, x, y);
+  
+
+  
+    ctx.shadowBlur  = (CFG.glowBlur*0.55) * DPR;
+  
+    ctx.globalAlpha = alpha * 0.88;
+  
+    ctx.fillText(ch, x, y);
+  
+
+  
+    ctx.shadowBlur  = 0;
+  
+    ctx.globalAlpha = alpha;
+  
+    ctx.fillText(ch, x, y);
+  
+
+  
+    ctx.restore();
+  
+  }
+  
+
+  
+  function drawBalloonAboveLetter(x,y,size,color,t){
+  
+    const r  = size * CFG.balloonSizeMul;
+  
+    const bx = x;
+  
+    const by = y - r*1.90;
+  
+
+  
+    ctx.save();
+  
+
+  
+    ctx.fillStyle = hslaFromHsl(color, CFG.balloonAlpha);
+  
+    ctx.beginPath();
+  
+    ctx.ellipse(bx, by, r*0.95, r*1.18, 0, 0, Math.PI*2);
+  
+    ctx.fill();
+  
+
+  
+    ctx.fillStyle = `rgba(255,255,255,${CFG.highlightAlpha})`;
+  
+    ctx.beginPath();
+  
+    ctx.ellipse(bx - r*0.28, by - r*0.38, r*0.22, r*0.32, 0, 0, Math.PI*2);
+  
+    ctx.fill();
+  
+
+  
+    const sway = Math.sin(t*2.3) * 10 * DPR;
+  
+    ctx.strokeStyle = hslaFromHsl(color, CFG.stringAlpha);
+  
+    ctx.lineWidth = 2.2*DPR;
+  
+    ctx.lineCap = "round";
+  
+
+  
+    ctx.beginPath();
+  
+    ctx.moveTo(bx, by + r*1.10);
+  
+    ctx.quadraticCurveTo(
+  
+      bx + sway, (by + y) * 0.55,
+  
+      x, y - size*0.22
+  
+    );
+  
+    ctx.stroke();
+  
+
+  
+    ctx.restore();
+  
+  }
+  
+
+  
+  function allFormed(){
+  
+    return letters.every(L => (L.state !== "rocket" && L.state !== "explode"));
+  
+  }
+  
+
+  
+  layout();
+  
+
+  
+  let start = performance.now();
+  
+  let last  = start;
+  
+
+  
+  function loop(now){
+  
+    const dt = Math.min(0.033, (now-last)/1000);
+  
+    const t  = (now-start)/1000;
+  
+    last = now;
+  
+
+  
+    drawBg();
+  
+    updateSparks(dt);
+  
+    drawSparks();
+  
+
+  
+    if(formedTime === null && allFormed()){
+  
+      formedTime = t;
+  
+      const base = formedTime + CFG.readHold;
+  
+      for(const L of letters){
+  
+        L.balloonAt = base + rand(CFG.balloonDelayMin, CFG.balloonDelayMax);
+  
+        L.releaseAt = L.balloonAt + rand(CFG.releaseDelayMin, CFG.releaseDelayMax);
+  
+      }
+  
+    }
+  
+
+  
+    for(const L of letters){
+  
+      if(t < L.born) continue;
+  
+
+  
+      if(L.state === "rocket"){
+  
+        const aimX = (L.tx - L.x) * 1.6;
+  
+        L.vx += aimX * dt;
+  
+        L.vx += Math.sin((t+L.tSeed)*6) * L.wig * DPR * dt * 16;
+  
+
+  
+        L.x += L.vx * dt;
+  
+        L.y += L.vy * dt;
+  
+        L.vy += 820*DPR*dt;
+  
+
+  
+        ctx.save();
+  
+        ctx.globalAlpha = 0.85;
+  
+        ctx.strokeStyle = hslaFromHsl(L.color, 0.78);
+  
+        ctx.lineWidth = 2.6*DPR;
+  
+        ctx.lineCap = "round";
+  
+        ctx.beginPath();
+  
+        ctx.moveTo(L.x, L.y);
+  
+        ctx.lineTo(L.x, L.y + 28*DPR);
+  
+        ctx.stroke();
+  
+
+  
+        ctx.fillStyle = L.color;
+  
+        ctx.beginPath();
+  
+        ctx.arc(L.x, L.y, 2.6*DPR, 0, Math.PI*2);
+  
+        ctx.fill();
+  
+        ctx.restore();
+  
+
+  
+        const near = Math.hypot(L.tx - L.x, L.ty - L.y) < (36*DPR);
+  
+        if(near || L.vy > 80*DPR){
+  
+          L.state = "explode";
+  
+          L.explodedAt = t;
+  
+          spawnExplosion(L.tx, L.ty, L.color);
+  
+        }
+  
+      }
+  
+      else if(L.state === "explode"){
+  
+        const u = clamp((t - L.explodedAt)/CFG.explodeHold, 0, 1);
+  
+        if(u >= 1){
+  
+          L.state = "show";
+  
+          L.alpha = 0;
+  
+        }
+  
+      }
+  
+      else if(L.state === "show"){
+  
+        L.alpha = clamp(L.alpha + dt*2.0, 0, 1);
+  
+        drawNeonLetter(L.ch, L.tx, L.ty, L.size, L.color, L.alpha);
+  
+
+  
+        if(formedTime !== null && t >= L.balloonAt){
+  
+          L.state = "balloon";
+  
+        }
+  
+      }
+  
+      else if(L.state === "balloon"){
+  
+        drawNeonLetter(L.ch, L.tx, L.ty, L.size, L.color, 1);
+  
+        drawBalloonAboveLetter(L.tx, L.ty, L.size, L.color, t);
+  
+
+  
+        if(t >= L.releaseAt){
+  
+          L.state = "float";
+  
+          L.x = L.tx;
+  
+          L.y = L.ty;
+  
+        }
+  
+      }
+  
+      else if(L.state === "float"){
+  
+        L.tSeed += dt;
+  
+        const drift = Math.sin(L.tSeed*2.2) * CFG.floatDrift * DPR;
+  
+
+  
+        L.x += (L.fx*dt) + drift*dt;
+  
+        L.y += (L.fy*dt);
+  
+        L.fy -= 6*DPR*dt;
+  
+
+  
+        drawNeonLetter(L.ch, L.x, L.y, L.size, L.color, 1);
+  
+        drawBalloonAboveLetter(L.x, L.y, L.size, L.color, t);
+  
+
+  
+        if(L.y < -L.size*2) L.state = "gone";
+  
+      }
+  
+    }
+  
+
+  
+    if(formedTime !== null){
+  
+      const u = clamp((t - formedTime)/0.6, 0, 1);
+  
+      const k = easeOut(u);
+  
+      ctx.save();
+  
+      ctx.globalAlpha = 0.12*k;
+  
+      const g = ctx.createRadialGradient(W*0.5, H*0.52, 10, W*0.5, H*0.52, Math.min(W,H)*0.30);
+  
+      g.addColorStop(0,"rgba(255,255,255,0.26)");
+  
+      g.addColorStop(1,"rgba(255,255,255,0)");
+  
+      ctx.fillStyle=g;
+  
+      ctx.fillRect(0,0,W,H);
+  
+      ctx.restore();
+  
+    }
+  
+
+  
+    // ===== FASE FINAL =====
+  
+    const allGone = letters.length > 0 && letters.every(L => L.state === "gone");
+  
+    if(!showFinal && allGone){
+  
+      showFinal = true;
+  
+      finalStart = t;
+  
+    }
+  
+
+  
+    if(showFinal){
+  
+      const u = clamp((t - finalStart) / 1.2, 0, 1);
+  
+      const a = easeOut(u);
+  
+      
+// Confeti elegante (más visible)
+ctx.save();
+ctx.globalAlpha = 0.42 * a;        // antes 0.22
+ctx.lineCap = "round";
+
+for(let i=0;i<100;i++){            // antes 70
+  const px = (Math.sin(i*999 + t*0.8)*0.5 + 0.5) * W;
+  const py = (Math.cos(i*777 + t*0.9)*0.5 + 0.5) * H;
+
+  const len = (3 + (i%6)) * DPR;   // un poquito más grande
+  const hh = (i*23 + t*60) % 360;
+
+  ctx.strokeStyle = `hsla(${hh}, 95%, 72%, 0.75)`;
+  ctx.lineWidth = 2.4 * DPR;       // antes 1.6
+
+  // glow suave
+  ctx.shadowColor = `hsla(${hh}, 95%, 72%, 0.65)`;
+  ctx.shadowBlur  = 10 * DPR;
+
+  ctx.beginPath();
+  ctx.moveTo(px, py);
+  ctx.lineTo(px + len, py + len*0.9);
+  ctx.stroke();
+}
+
+ctx.shadowBlur = 0;
+ctx.restore();
+  
+      
+  
+
+  
+// Overlay menos oscuro + un toque color
+  
+ctx.save();
+  
+ctx.globalAlpha = 0.45 * a;
+  
+const og = ctx.createRadialGradient(W*0.5, H*0.55, 20, W*0.5, H*0.55, Math.max(W,H)*0.8);
+  
+og.addColorStop(0, "rgba(40,20,80,0.35)");
+  
+og.addColorStop(1, "rgba(0,0,0,0.78)");
+  
+ctx.fillStyle = og;
+  
+ctx.fillRect(0, 0, W, H);
+  
+ctx.restore();
+  
+
+  
+// Halo cálido detrás de la tarjeta (cumple elegante)
+  
+ctx.save();
+  
+ctx.globalAlpha = 0.25 * a;
+  
+const hg = ctx.createRadialGradient(W*0.5, H*0.55, 10, W*0.5, H*0.55, Math.min(W,H)*0.45);
+  
+hg.addColorStop(0, "rgba(255,200,120,0.18)");
+  
+hg.addColorStop(0.5,"rgba(180,120,255,0.10)");
+  
+hg.addColorStop(1, "rgba(0,0,0,0)");
+  
+ctx.fillStyle = hg;
+  
+ctx.fillRect(0, 0, W, H);
+  
+ctx.restore();
+  
+      const cardW = Math.min(W*0.86, H*0.78);
+  
+      const cardH = cardW * 1.25;
+  
+      const cardX = W/2 - cardW/2;
+  
+      const cardY = H/2 - cardH/2;
+  
+
+  
+      ctx.save();
+  
+      ctx.globalAlpha = 0.18 * a;
+  
+      ctx.fillStyle = "rgba(255,255,255,0.25)";
+  
+      ctx.beginPath();
+  
+      roundRect(ctx, cardX, cardY, cardW, cardH, 22*DPR);
+  
+      ctx.fill();
+  
+      ctx.restore();
+  
+
+  
+      // Borde neon animado (sutil)
+  
+ctx.save();
+  
+ctx.globalAlpha = 0.55 * a;
+  
+ctx.lineWidth = 2.2 * DPR;
+  
+
+  
+const hue = (t * 35) % 360;
+  
+ctx.strokeStyle = `hsla(${hue}, 95%, 70%, 0.55)`;
+  
+ctx.shadowColor = `hsla(${hue}, 95%, 70%, 0.85)`;
+  
+ctx.shadowBlur = 18 * DPR;
+  
+
+  
+ctx.beginPath();
+  
+roundRect(ctx, cardX, cardY, cardW, cardH, 22*DPR);
+  
+ctx.stroke();
+  
+ctx.restore();
+  
+
+  
+      const imgW = cardW * 0.82;
+  
+      const imgH = cardH * 0.56;
+  
+      const imgX = W/2 - imgW/2;
+  
+      const imgY = cardY + cardH*0.10;
+  
+
+  
+      if(finalImg.complete && finalImg.naturalWidth){
+  
+        ctx.save();
+  
+        ctx.globalAlpha = 1 * a;
+  
+
+  
+        ctx.beginPath();
+  
+        roundRect(ctx, imgX, imgY, imgW, imgH, 18*DPR);
+  
+        ctx.clip();
+  
+
+  
+        const iw = finalImg.naturalWidth;
+  
+        const ih = finalImg.naturalHeight;
+  
+        const imgAR = iw/ih;
+  
+        const boxAR = imgW/imgH;
+  
+        let sx=0, sy=0, sw=iw, sh=ih;
+  
+        if(imgAR > boxAR){
+  
+          sw = ih*boxAR;
+  
+          sx = (iw - sw)/2;
+  
+        } else {
+  
+          sh = iw/boxAR;
+  
+          sy = (ih - sh)/2;
+  
+        }
+  
+
+  
+        ctx.drawImage(finalImg, sx, sy, sw, sh, imgX, imgY, imgW, imgH);
+  
+        ctx.restore();
+  
+
+  
+        ctx.save();
+  
+        ctx.globalAlpha = 0.35 * a;
+  
+        ctx.strokeStyle = "rgba(255,255,255,0.45)";
+  
+        ctx.lineWidth = 2*DPR;
+  
+        ctx.beginPath();
+  
+        roundRect(ctx, imgX, imgY, imgW, imgH, 18*DPR);
+  
+        ctx.stroke();
+  
+        ctx.restore();
+  
+      } else {
+  
+        ctx.save();
+  
+        ctx.globalAlpha = 0.25 * a;
+  
+        ctx.fillStyle = "rgba(255,255,255,0.12)";
+  
+        ctx.beginPath();
+  
+        roundRect(ctx, imgX, imgY, imgW, imgH, 18*DPR);
+  
+        ctx.fill();
+  
+        ctx.restore();
+  
+      }
+  
+
+  
+      ctx.save();
+  
+      ctx.globalAlpha = 1 * a;
+  
+      ctx.textAlign = "center";
+  
+      ctx.textBaseline = "middle";
+  
+
+  
+      const titleY = imgY + imgH + cardH*0.12;
+  
+      const fs1 = Math.floor(Math.min(W,H) * 0.045);
+  
+      const fs2 = Math.floor(Math.min(W,H) * 0.032);
+  
+
+  
+      ctx.font = `900 ${fs1}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+  
+      ctx.shadowColor = "rgba(255,255,255,0.35)";
+  
+      ctx.shadowBlur  = 10 * DPR;
+  
+      ctx.fillStyle   = "rgba(255,255,255,0.98)";
+  
+      ctx.fillText(DEDICATORIA[0] || "", W/2, titleY);
+  
+
+  
+      ctx.font = `700 ${fs2}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+  
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.shadowColor = "rgba(255,255,255,0.22)";
+      ctx.shadowBlur  = 8 * DPR;
+  
+      for(let i=1;i<DEDICATORIA.length;i++){
+  
+        ctx.fillText(DEDICATORIA[i], W/2, titleY + i*(fs2*1.5));
+  
+      }
+      ctx.shadowBlur = 0;
+      ctx.restore();
+  
+    }
+  
+
+  
+    // ✅ SOLO UNA VEZ
+  
+    requestAnimationFrame(loop);
+  
+  }
+  
+
+  
+  // ✅ SOLO UNA VEZ
+  
+  requestAnimationFrame(loop);
+  
+
+  
+  addEventListener("pointerdown", () => {
+  
+    start = performance.now();
+  
+    last = start;
+  
+    layout();
+  
+  });
+  
+})();
+  
+  </script>
+</body>
+  </html>   
